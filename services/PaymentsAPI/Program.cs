@@ -1,11 +1,20 @@
 using MassTransit;
 using PaymentsAPI;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Service", "PaymentsAPI")
+    .WriteTo.Console(new RenderedCompactJsonFormatter()));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<PaymentProcessor>();
+builder.Services.AddScoped<CorrelationContext>();
 
 builder.Services.AddMassTransit(bus =>
 {
@@ -27,6 +36,8 @@ builder.Services.AddMassTransit(bus =>
 
 var app = builder.Build();
 
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseSerilogRequestLogging();
 app.UseSwagger();
 app.UseSwaggerUI();
 
