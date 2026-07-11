@@ -6,6 +6,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<PaymentProcessor>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 builder.Services.AddMassTransit(bus =>
 {
@@ -27,6 +29,7 @@ builder.Services.AddMassTransit(bus =>
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 
