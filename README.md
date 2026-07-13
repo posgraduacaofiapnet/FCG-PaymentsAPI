@@ -1,62 +1,85 @@
 # FCG-PaymentsAPI
 
-Microservice responsible for consuming purchase orders (`OrderPlacedEvent`), simulating payment processing, and publishing the result (`PaymentProcessedEvent`) back to RabbitMQ.
+Microserviço responsável por consumir pedidos de compra (`OrderPlacedEvent`), simular o processamento do pagamento e publicar o resultado (`PaymentProcessedEvent`) de volta ao RabbitMQ.
 
-Part of **FIAP Cloud Games (FCG)** — Tech Challenge Phase 2.
+Parte do **FIAP Cloud Games (FCG)** — Tech Challenge Fase 2.
 
-## Tech Stack
+---
+
+## Tecnologias
 
 - .NET 10 / ASP.NET Core
 - MassTransit + RabbitMQ
 - Swagger / OpenAPI
+- Serilog (logs estruturados em JSON)
+
+---
 
 ## Endpoints
 
-| Method | Route | Description | Auth |
-|--------|-------|-------------|------|
-| `GET` | `/health` | Health check | No |
+| Método | Rota | Descrição | Auth |
+|--------|------|-----------|------|
+| `GET` | `/health` | Health check | Não |
 
-> PaymentsAPI is primarily event-driven — it has no user-facing purchase endpoints. It reacts to events published by CatalogAPI.
+> A PaymentsAPI é totalmente orientada a eventos — não possui endpoints de compra expostos ao usuário. Ela reage exclusivamente a eventos publicados pela CatalogAPI.
 
-## Events
+---
 
-| Direction | Event | Trigger |
-|-----------|-------|---------|
-| Consumes | `OrderPlacedEvent` | Triggered by CatalogAPI on purchase request |
-| Publishes | `PaymentProcessedEvent` | After simulating approval/rejection |
+## Eventos
 
-## Payment Simulation
+| Direção | Evento | Gatilho |
+|---------|--------|---------|
+| Consome | `OrderPlacedEvent` | Disparado pela CatalogAPI ao receber uma solicitação de compra |
+| Publica | `PaymentProcessedEvent` | Após simular a aprovação ou rejeição do pagamento |
 
-By default, all payments are **approved**. To force rejection for testing:
+---
+
+## Fluxo Event-Driven
+
+```
+CatalogAPI publica OrderPlacedEvent
+  → PaymentsAPI consome e simula o processamento
+    → PaymentsAPI publica PaymentProcessedEvent (Aprovado | Rejeitado)
+      → CatalogAPI atualiza a biblioteca do usuário (se Aprovado)
+      → NotificationsAPI envia e-mail de confirmação (se Aprovado)
+```
+
+---
+
+## Simulação de Pagamento
+
+Por padrão, **todos os pagamentos são aprovados**. Para forçar rejeição em testes:
 
 ```json
-// appsettings.json or environment variable
+// appsettings.json ou variável de ambiente
 "Payments": {
   "ForceRejected": true
 }
 ```
 
-## Event-Driven Flow
+Ou via variável de ambiente:
 
-```
-CatalogAPI publishes OrderPlacedEvent
-  → PaymentsAPI consumes and simulates processing
-    → PaymentsAPI publishes PaymentProcessedEvent (Approved | Rejected)
-      → CatalogAPI updates user library (if approved)
-      → NotificationsAPI sends confirmation email (if approved)
+```bash
+Payments__ForceRejected=true
 ```
 
-## Environment Variables
+O evento `PaymentProcessedEvent` carrega `OrderId`, `UserId`, `GameId`, `Status` (Approved | Rejected) e `CorrelationId`.
 
-| Variable | Description |
-|----------|-------------|
-| `RabbitMq__Host` | RabbitMQ hostname |
-| `RabbitMq__Username` | RabbitMQ username |
-| `RabbitMq__Password` | RabbitMQ password |
-| `RabbitMq__OrderPlacedQueue` | Queue name for incoming orders |
-| `Payments__ForceRejected` | Set to `true` to simulate payment rejection |
+---
 
-## Running Locally
+## Variáveis de Ambiente
+
+| Variável | Descrição |
+|----------|-----------|
+| `RabbitMq__Host` | Hostname do RabbitMQ |
+| `RabbitMq__Username` | Usuário do RabbitMQ |
+| `RabbitMq__Password` | Senha do RabbitMQ |
+| `RabbitMq__OrderPlacedQueue` | Nome da fila para pedidos recebidos |
+| `Payments__ForceRejected` | Defina `true` para simular rejeição de pagamentos |
+
+---
+
+## Executando Localmente
 
 ### Docker Compose (via FCG-Orchestration)
 
@@ -65,47 +88,84 @@ cd FCG-Orchestration
 docker compose up --build
 ```
 
-Watch payment processing logs:
+Acompanhar logs do processamento de pagamentos:
 
 ```bash
-docker compose logs -f payments_api
+docker compose logs -f payments-api
 ```
+
+Swagger disponível em: http://localhost:5103/swagger
 
 ### Kubernetes
 
 ```bash
-# Build the image first
+# 1. Build da imagem local
 cd FCG-PaymentsAPI
 docker build -t fcg-payments-api:latest -f services/PaymentsAPI/Dockerfile .
 
-# Apply manifests
-cd k8s
+# 2. Aplique a infra (RabbitMQ) primeiro
+cd ../FCG-Orchestration/k8s
 kubectl apply -f .
 
-# Verify
+# 3. Aplique os manifestos da PaymentsAPI
+cd ../../FCG-PaymentsAPI/k8s
+kubectl apply -f .
+
+# 4. Verifique os pods
 kubectl get pods
+kubectl get services
+
+# 5. Acompanhe os logs
 kubectl logs -f deployment/payments-api
 ```
 
-## Solution Structure
+#### Manifestos Kubernetes
+
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `deployment.yaml` | Deployment | Define o Pod com 1 réplica, imagem, probes e referência a ConfigMap/Secret |
+| `service.yaml` | Service | Expõe a API internamente no cluster na porta 80 |
+| `configmap.yaml` | ConfigMap | Configurações não-sensíveis (RabbitMQ host/username, nome da fila, ForceRejected) |
+| `secret.yaml` | Secret | Dados sensíveis em base64 (RabbitMQ password) |
+
+As **readinessProbe** e **livenessProbe** do Deployment apontam para `/health` — o pod só recebe tráfego após o healthcheck passar.
+
+---
+
+## Testes Unitários
+
+```bash
+cd FCG-PaymentsAPI
+dotnet test FCG-PaymentsAPI.sln
+```
+
+Os testes utilizam **xUnit** e **Bogus** para geração de dados fictícios.
+
+---
+
+## Estrutura da Solution
 
 ```
 FCG-PaymentsAPI/
 ├── FCG-PaymentsAPI.sln
 ├── contracts/
-│   └── FCG.Contracts/        # Shared event contracts
+│   └── FCG.Contracts/        # Contratos de eventos compartilhados
 ├── services/
-│   └── PaymentsAPI/          # Main service project
-└── k8s/                      # Kubernetes manifests
+│   └── PaymentsAPI/          # Projeto principal do serviço
+├── tests/
+│   └── PaymentsAPI.Tests/    # Testes unitários (xUnit)
+└── k8s/                      # Manifestos Kubernetes
     ├── deployment.yaml
     ├── service.yaml
     ├── configmap.yaml
     └── secret.yaml
 ```
 
-## Related Repositories
+---
 
-- [FCG-Orchestration](https://github.com/posgraduacaofiapnet/FCG-Orchestration) — Docker Compose + global K8s infra
+## Repositórios Relacionados
+
+- [FCG-Orchestration](https://github.com/posgraduacaofiapnet/FCG-Orchestration) — Docker Compose + infraestrutura K8s global
 - [FCG-UsersAPI](https://github.com/posgraduacaofiapnet/FCG-UsersAPI)
 - [FCG-CatalogAPI](https://github.com/posgraduacaofiapnet/FCG-CatalogAPI)
 - [FCG-NotificationsAPI](https://github.com/posgraduacaofiapnet/FCG-NotificationsAPI)
