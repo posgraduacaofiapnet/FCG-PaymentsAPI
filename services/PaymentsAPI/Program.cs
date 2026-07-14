@@ -14,6 +14,8 @@ builder.Host.UseSerilog((context, configuration) => configuration
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<PaymentProcessor>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 builder.Services.AddScoped<CorrelationContext>();
 
 builder.Services.AddMassTransit(bus =>
@@ -36,6 +38,7 @@ builder.Services.AddMassTransit(bus =>
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseSerilogRequestLogging();
 app.UseSwagger();
