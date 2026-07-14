@@ -28,8 +28,11 @@ public sealed class OrderPlacedConsumer(
 {
     public async Task Consume(ConsumeContext<OrderPlacedEvent> context)
     {
+        var correlationId = CorrelationId.From(context.Headers);
+        using var _ = Serilog.Context.LogContext.PushProperty("CorrelationId", correlationId);
         var payment = processor.Process(context.Message);
         logger.LogInformation("Pagamento {Status} processado para pedido {OrderId}.", payment.Status, payment.OrderId);
-        await publisher.Publish(payment, context.CancellationToken);
+        await publisher.Publish(payment, publishContext =>
+            publishContext.Headers.Set(CorrelationId.HeaderName, correlationId), context.CancellationToken);
     }
 }
