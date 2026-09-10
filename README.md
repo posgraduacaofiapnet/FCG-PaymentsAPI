@@ -12,6 +12,7 @@ Parte do **FIAP Cloud Games (FCG)** — Tech Challenge Fase 2.
 - MassTransit + RabbitMQ
 - Swagger / OpenAPI
 - Serilog (logs estruturados em JSON)
+- Prometheus-net (Métricas de aplicação)
 
 ---
 
@@ -20,6 +21,7 @@ Parte do **FIAP Cloud Games (FCG)** — Tech Challenge Fase 2.
 | Método | Rota | Descrição | Auth |
 |--------|------|-----------|------|
 | `GET` | `/health` | Health check | Não |
+| `GET` | `/metrics` | Métricas no padrão Prometheus | Não |
 
 > A PaymentsAPI é totalmente orientada a eventos — não possui endpoints de compra expostos ao usuário. Ela reage exclusivamente a eventos publicados pela CatalogAPI.
 
