@@ -43,7 +43,7 @@ CatalogAPI publica OrderPlacedEvent
   → PaymentsAPI consome e simula o processamento
     → PaymentsAPI publica PaymentProcessedEvent (Aprovado | Rejeitado)
       → CatalogAPI atualiza a biblioteca do usuário (se Aprovado)
-      → NotificationsAPI envia e-mail de confirmação (se Aprovado)
+      → CatalogAPI persiste PaymentProcessed no outbox para a Lambda de notificações
 ```
 
 ---
@@ -170,4 +170,5 @@ FCG-PaymentsAPI/
 - [FCG-Orchestration](https://github.com/posgraduacaofiapnet/FCG-Orchestration) — Docker Compose + infraestrutura K8s global
 - [FCG-UsersAPI](https://github.com/posgraduacaofiapnet/FCG-UsersAPI)
 - [FCG-CatalogAPI](https://github.com/posgraduacaofiapnet/FCG-CatalogAPI)
-- [FCG-NotificationsAPI](https://github.com/posgraduacaofiapnet/FCG-NotificationsAPI)
+- FCG-Notifications-Lambda — consumidor serverless dos eventos de notificação
+- FCG-Outbox-Processor — publicação confiável dos eventos SQL na SQS
