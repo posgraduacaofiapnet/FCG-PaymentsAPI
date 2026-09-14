@@ -14,8 +14,8 @@ spec:
     spec:
       containers:
         - name: payments-api
-          image: fcg-payments-api:latest
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/posgraduacaofiapnet/fcg-payments-api:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           envFrom:
