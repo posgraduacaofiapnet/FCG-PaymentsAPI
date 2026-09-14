@@ -1,5 +1,6 @@
 using MassTransit;
 using PaymentsAPI;
+using Prometheus;
 using Serilog;
 using Serilog.Formatting.Compact;
 
@@ -35,15 +36,22 @@ builder.Services.AddMassTransit(bus =>
         });
     });
 });
+builder.Services.AddOptions<MassTransitHostOptions>().Configure(options =>
+{
+    options.WaitUntilStarted = true;
+    options.StartTimeout = TimeSpan.FromMinutes(2);
+});
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseHttpMetrics();
 app.UseSerilogRequestLogging();
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.MapMetrics();
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy", service = "PaymentsAPI" }));
 
 app.Run();
