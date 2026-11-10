@@ -5,6 +5,7 @@ Microsservico responsavel por consumir pedidos, simular pagamento e publicar o r
 ## Endpoints
 
 - `GET /health`
+- `GET /metrics`
 
 ## Eventos
 
@@ -19,4 +20,7 @@ Microsservico responsavel por consumir pedidos, simular pagamento e publicar o r
 - `RabbitMq__OrderPlacedQueue`
 - `Payments__ForceRejected`
 
-Esta pasta pode ser movida para um repositorio Git proprio.
+Este projeto já pertence ao repositório separado `FCG-PaymentsAPI`. Consultar o
+[README principal](../../README.md) para execução, contratos, Kubernetes e papel na Fase 4.
+O serviço não tem banco próprio; publica o resultado no RabbitMQ. O CatalogAPI registra a
+notificação na outbox SQL para publicação posterior na SQS e consumo pela Lambda.

@@ -2,7 +2,20 @@
 
 Microserviço responsável por consumir pedidos de compra (`OrderPlacedEvent`), simular o processamento do pagamento e publicar o resultado (`PaymentProcessedEvent`) de volta ao RabbitMQ.
 
-Parte do **FIAP Cloud Games (FCG)** — Tech Challenge Fase 2.
+Parte do **FIAP Cloud Games (FCG)**, mantendo o fluxo de pagamentos da Fase 2 na evolução para a Fase 4.
+
+## Papel na Fase 4
+
+O serviço continua stateless e orientado a eventos. MongoDB, Redis e busca pertencem ao CatalogAPI;
+não é necessário adicioná-los ao PaymentsAPI para cumprir o desenho atual. O escopo mínimo de
+CI/CD do enunciado é UsersAPI e CatalogAPI, embora este repositório também tenha
+[workflow de testes e publicação](.github/workflows/publish-container.yml) no GHCR com tag `latest`.
+O workflow não faz deploy no cluster.
+
+A [matriz da Fase 4](https://github.com/posgraduacaofiapnet/FCG-Orchestration/blob/master/docs/FASE4.md)
+e a [arquitetura](https://github.com/posgraduacaofiapnet/FCG-Orchestration/blob/master/docs/ARQUITETURA.md)
+centralizam requisitos, evidências e pendências. A NotificationsAPI antiga não participa do
+Compose atual: notificações seguem por outbox SQL, SQS e Lambda.
 
 ---
 
@@ -65,7 +78,10 @@ Ou via variável de ambiente:
 Payments__ForceRejected=true
 ```
 
-O evento `PaymentProcessedEvent` carrega `OrderId`, `UserId`, `GameId`, `Status` (Approved | Rejected) e `CorrelationId`.
+O evento `PaymentProcessedEvent` carrega `OrderId`, `UserId`, `GameId`, `GameTitle`, `Price`,
+`Status` (Approved | Rejected) e `ProcessedAt`. O `CorrelationId` é propagado pelo header da
+mensagem, não por um campo desse contrato. Os contratos de pagamento estão em
+`contracts/FCG.Contracts/Events.cs` e devem permanecer compatíveis com o CatalogAPI.
 
 ---
 
@@ -87,8 +103,12 @@ O evento `PaymentProcessedEvent` carrega `OrderId`, `UserId`, `GameId`, `Status`
 
 ```bash
 cd FCG-Orchestration
-docker compose up --build
+powershell -NoProfile -ExecutionPolicy Bypass -File ./start-local.ps1
 ```
+
+O comando usa PowerShell. O Orchestration exige UsersAPI, CatalogAPI, PaymentsAPI,
+`FCG-Outbox-Processor` e `FCG-Notifications-Lambda` como pastas irmãs. O script empacota a Lambda
+antes de iniciar a stack local; o Compose sozinho não gera esse artefato na primeira execução.
 
 Acompanhar logs do processamento de pagamentos:
 
@@ -101,25 +121,23 @@ Swagger disponível em: http://localhost:5103/swagger
 ### Kubernetes
 
 ```bash
-# 1. Build da imagem local
-cd FCG-PaymentsAPI
-docker build -t fcg-payments-api:latest -f services/PaymentsAPI/Dockerfile .
+# A partir da pasta que contém os repositórios, em contexto já configurado
+kubectl config current-context
+kubectl apply -k FCG-Orchestration/k8s
+kubectl wait --for=condition=complete job/fcg-database-init --timeout=180s
+kubectl apply -f FCG-PaymentsAPI/k8s
 
-# 2. Aplique a infra (RabbitMQ) primeiro
-cd ../FCG-Orchestration/k8s
-kubectl apply -f .
-
-# 3. Aplique os manifestos da PaymentsAPI
-cd ../../FCG-PaymentsAPI/k8s
-kubectl apply -f .
-
-# 4. Verifique os pods
+# Verifique o serviço e acompanhe os logs
 kubectl get pods
 kubectl get services
-
-# 5. Acompanhe os logs
 kubectl logs -f deployment/payments-api
 ```
+
+Os manifests usam imagem publicada no GHCR; construir imagem com nome local diferente não
+altera a imagem do Deployment. Os comandos acima não provisionam cluster cloud e não sobem
+APIs, workers, gateway e monitoramento completos. Configurar registry/acesso e segredos antes
+do uso no ambiente final. A [validação central](https://github.com/posgraduacaofiapnet/FCG-Orchestration/blob/master/docs/VALIDACAO.md)
+descreve os critérios de evidência para a Fase 4.
 
 #### Manifestos Kubernetes
 
@@ -128,9 +146,10 @@ kubectl logs -f deployment/payments-api
 | `deployment.yaml` | Deployment | Define o Pod com 1 réplica, imagem, probes e referência a ConfigMap/Secret |
 | `service.yaml` | Service | Expõe a API internamente no cluster na porta 80 |
 | `configmap.yaml` | ConfigMap | Configurações não-sensíveis (RabbitMQ host/username, nome da fila, ForceRejected) |
-| `secret.yaml` | Secret | Dados sensíveis em base64 (RabbitMQ password) |
+| `secret.yaml` | Secret | Configuração sensível do RabbitMQ; há valores fixos versionados, ainda pendentes de adequação à Fase 4 |
 
-As **readinessProbe** e **livenessProbe** do Deployment apontam para `/health` — o pod só recebe tráfego após o healthcheck passar.
+As **readinessProbe** e **livenessProbe** do Deployment apontam para `/health`. A resposta HTTP
+não verifica todas as dependências e não comprova, sozinha, rollout sem indisponibilidade.
 
 ---
 
@@ -155,7 +174,7 @@ FCG-PaymentsAPI/
 ├── services/
 │   └── PaymentsAPI/          # Projeto principal do serviço
 ├── tests/
-│   └── PaymentsAPI.Tests/    # Testes unitários (xUnit)
+│   └── PaymentsAPI.UnitTests/ # Testes unitários (xUnit)
 └── k8s/                      # Manifestos Kubernetes
     ├── deployment.yaml
     ├── service.yaml
@@ -170,5 +189,5 @@ FCG-PaymentsAPI/
 - [FCG-Orchestration](https://github.com/posgraduacaofiapnet/FCG-Orchestration) — Docker Compose + infraestrutura K8s global
 - [FCG-UsersAPI](https://github.com/posgraduacaofiapnet/FCG-UsersAPI)
 - [FCG-CatalogAPI](https://github.com/posgraduacaofiapnet/FCG-CatalogAPI)
-- FCG-Notifications-Lambda — consumidor serverless dos eventos de notificação
-- FCG-Outbox-Processor — publicação confiável dos eventos SQL na SQS
+- [FCG-Notifications-Lambda](https://github.com/posgraduacaofiapnet/FCG-Notifications-Lambda) — consumidor serverless dos eventos de notificação
+- [FCG-Outbox-Processor](https://github.com/posgraduacaofiapnet/FCG-Outbox-Processor) — publicação confiável dos eventos SQL na SQS
