@@ -9,8 +9,10 @@ Parte do **FIAP Cloud Games (FCG)**, mantendo o fluxo de pagamentos da Fase 2 na
 O serviço continua stateless e orientado a eventos. MongoDB, Redis e busca pertencem ao CatalogAPI;
 não é necessário adicioná-los ao PaymentsAPI para cumprir o desenho atual. O escopo mínimo de
 CI/CD do enunciado é UsersAPI e CatalogAPI, embora este repositório também tenha
-[workflow de testes e publicação](.github/workflows/publish-container.yml) no GHCR com tag `latest`.
-O workflow não faz deploy no cluster.
+[workflow de testes, publicação e deploy](.github/workflows/publish-container.yml): testes,
+OIDC AWS, build/push no ECR com tags SHA e `latest`, Trivy não bloqueante e rollout no EKS.
+PRs executam somente testes; push/execução manual incluem publicação e deploy. O Deployment
+precisa existir previamente. Configuração no [guia de CI/CD](https://github.com/posgraduacaofiapnet/FCG-Orchestration/blob/master/docs/CICD.md).
 
 A [matriz da Fase 4](https://github.com/posgraduacaofiapnet/FCG-Orchestration/blob/master/docs/FASE4.md)
 e a [arquitetura](https://github.com/posgraduacaofiapnet/FCG-Orchestration/blob/master/docs/ARQUITETURA.md)
@@ -121,11 +123,12 @@ Swagger disponível em: http://localhost:5103/swagger
 ### Kubernetes
 
 ```bash
-# A partir da pasta que contém os repositórios, em contexto já configurado
+# Bash, na raiz do FCG-Orchestration, após provisionar o ambiente conforme docs/CICD.md
 kubectl config current-context
-kubectl apply -k FCG-Orchestration/k8s
+./scripts/apply-k8s-secrets.sh
+kubectl apply -k k8s
 kubectl wait --for=condition=complete job/fcg-database-init --timeout=180s
-kubectl apply -f FCG-PaymentsAPI/k8s
+./scripts/apply-api-manifests.sh
 
 # Verifique o serviço e acompanhe os logs
 kubectl get pods
@@ -133,8 +136,11 @@ kubectl get services
 kubectl logs -f deployment/payments-api
 ```
 
-Os manifests usam imagem publicada no GHCR; construir imagem com nome local diferente não
-altera a imagem do Deployment. Os comandos acima não provisionam cluster cloud e não sobem
+Na primeira execução, o script de Secrets cria arquivos locais com placeholders e interrompe
+a aplicação; preencher os valores e executá-lo novamente. Nunca aplicar `secret.example.yaml`
+ou a pasta inteira `k8s/` das APIs. Os manifests usam ECR `latest` como imagem inicial e a pipeline
+seleciona SHA no deploy. Há duas réplicas e `maxUnavailable: 0`. Os comandos acima não provisionam
+cluster cloud e não sobem
 APIs, workers, gateway e monitoramento completos. Configurar registry/acesso e segredos antes
 do uso no ambiente final. A [validação central](https://github.com/posgraduacaofiapnet/FCG-Orchestration/blob/master/docs/VALIDACAO.md)
 descreve os critérios de evidência para a Fase 4.
@@ -143,10 +149,10 @@ descreve os critérios de evidência para a Fase 4.
 
 | Arquivo | Tipo | Descrição |
 |---------|------|-----------|
-| `deployment.yaml` | Deployment | Define o Pod com 1 réplica, imagem, probes e referência a ConfigMap/Secret |
+| `deployment.yaml` | Deployment | Define 2 réplicas, rolling update, imagem ECR, probes e referência a ConfigMap/Secret |
 | `service.yaml` | Service | Expõe a API internamente no cluster na porta 80 |
 | `configmap.yaml` | ConfigMap | Configurações não-sensíveis (RabbitMQ host/username, nome da fila, ForceRejected) |
-| `secret.yaml` | Secret | Configuração sensível do RabbitMQ; há valores fixos versionados, ainda pendentes de adequação à Fase 4 |
+| `secret.example.yaml` | Modelo de Secret | Somente placeholders; copiar para `secret.yaml` local ignorado e preencher antes de aplicar |
 
 As **readinessProbe** e **livenessProbe** do Deployment apontam para `/health`. A resposta HTTP
 não verifica todas as dependências e não comprova, sozinha, rollout sem indisponibilidade.
@@ -179,7 +185,7 @@ FCG-PaymentsAPI/
     ├── deployment.yaml
     ├── service.yaml
     ├── configmap.yaml
-    └── secret.yaml
+    └── secret.example.yaml   # Modelo; secret.yaml real é local e ignorado
 ```
 
 ---
